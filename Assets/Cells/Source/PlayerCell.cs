@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using UnityEngine.Networking;
 using System.Collections;
 
 public class PlayerCell : Cell {
@@ -16,19 +17,36 @@ public class PlayerCell : Cell {
 	CameraController cameraController;
 	GameController gameController;
 
+	NetworkIdentity networkIdentity;
+
+	public override void OnStartLocalPlayer()
+	{
+		GetComponent<MeshRenderer>().material.color = Color.red;
+	}
+
+	void Awake() {
+		networkIdentity = this.GetComponent<NetworkIdentity> ();	
+	}
+
 	void Start() {
 		gameController = GameObject.FindGameObjectWithTag ("GameController").GetComponent<GameController> ();
 
-		if (ID == gameController.ClientId) {
+//		if (ID == gameController.ClientId) {
+		if(networkIdentity.isLocalPlayer) {
 			cameraController = GameObject.FindGameObjectWithTag ("MainCamera").GetComponent<CameraController> ();
 
 			cameraController.SetTarget (this.transform);
 			cameraController.SetDistance (-CameraDistance);
 		}
+
+		if(isServer) {
+			gameController.SpawnEnergyCells (); // if server
+		}
 	}
 
 	void Update() {
-		if (ID == gameController.ClientId) {
+//		if (ID == gameController.ClientId) {
+		if(networkIdentity.isLocalPlayer) {
 			float vertical = Input.GetAxis ("Vertical");
 			float horizontal = Input.GetAxis ("Horizontal");
 
@@ -64,8 +82,10 @@ public class PlayerCell : Cell {
 			MoveSpeed -= SpeedReductionRate;
 		}
 
-		CameraDistance += CameraDistanceIncreaseRate;
-		cameraController.SetDistance (-CameraDistance);
+		if (networkIdentity.isLocalPlayer) {
+			CameraDistance += CameraDistanceIncreaseRate;
+			cameraController.SetDistance (-CameraDistance);
+		}
 
 		Vector3 newSize = this.transform.localScale;
 		newSize.x += amount;
@@ -76,8 +96,12 @@ public class PlayerCell : Cell {
 
 	void OnEatCell(Cell cell) {
 		CellsEaten++;
-		Worth += cell.GetWorth ();
-		Grow (cell.GetWorth());
+		Worth += GetWorth(cell);
+		Grow (GetWorth(cell));
+	}
+	 
+	public override void RpcOnEaten() {
+		StartCoroutine (OnEaten ());
 	}
 
 	public override IEnumerator OnEaten() {
@@ -87,13 +111,14 @@ public class PlayerCell : Cell {
 	}
 
 	void OnTriggerEnter(Collider hit) {
-		if (ID == gameController.ClientId) {
+//		if (ID == gameController.ClientId) {
+//		if(networkIdentity.isLocalPlayer) {
 			Cell cell = hit.GetComponent<Cell> ();
 
-			if (cell != null && cell.CanEat(this)) {
-				OnEatCell (cell);
-				StartCoroutine (cell.OnEaten ());
-			}
+		if (cell != null && cell.CanEat(this) && cell.IsActive) {
+			OnEatCell (cell);
+			cell.RpcOnEaten ();
 		}
+//		}
 	}
 }
